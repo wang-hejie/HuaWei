@@ -36,33 +36,42 @@ class MLPDataset(Dataset):
         return len(self.history_behavior)
 
 
-def model_train(model, epoch, train_loader, watch_loss_fn, share_loss_fn, optimizer):
+# target = 'watch' or 'share'
+def model_train(model, epoch, train_loader, loss_fn, optimizer, target: str):
     for _ in range(epoch):
         for idx, data in enumerate(train_loader):
             feed_dict = {
                 'user_id': data[0].long().cuda(),
                 'video_id': data[1].long().cuda(),
             }
-            watch_label = data[2].long().cuda()
-            share_label = data[3].float().cuda()
+
+            if target == 'watch':
+                watch_label = data[2].long().cuda()
+                label = watch_label
+            elif target == 'share':
+                share_label = data[3].float().cuda()
+                label = share_label
+            else:
+                print('Target must be watch or share!')
+                exit(0)
 
             optimizer.zero_grad()
-            watch_pred, share_pred = model(feed_dict)
-            loss = watch_loss_fn(watch_pred, watch_label) + share_loss_fn(share_pred, share_label)
-
+            pred = model(feed_dict)
+            loss = loss_fn(pred, label)
             loss.backward()
             optimizer.step()
 
-            acc = ((watch_pred.argmax(1) == watch_label)[watch_label != 0]).float().sum()
-            acc /= (watch_label != 0).float().sum()
+            # acc = ((pred.argmax(1) == label)[label != 0]).float().sum()
+            acc = (pred.argmax(1) == label).float().sum()
+            acc /= (label != 0).float().sum()
 
             if idx % 100 == 0:
                 print(f'{idx}/{len(train_loader)} \t {loss.item()}\t{acc}',
-                      (watch_pred.argmax(1) == watch_label).float().sum())
-    return watch_pred, watch_label
+                      (pred.argmax(1) == label).float().sum())
+    return pred, label
 
 
-def model_predict(model, test_loader, test_data):
+def model_predict(model, test_loader, test_data, target: str):
     # 预测测试集
     test_watch = []
     test_share = []
@@ -72,20 +81,26 @@ def model_predict(model, test_loader, test_data):
                 'user_id': data[0].long().cuda(),
                 'video_id': data[1].long().cuda(),
             }
-            watch_pred, share_pred = model(feed_dict)
+            if target == 'watch':
+                watch_pred = model(feed_dict)
+                test_watch += list(watch_pred.argmax(1).cpu().data.numpy())
+            elif target == 'share':
+                share_pred = model(feed_dict)
+                test_share += list((share_pred.sigmoid() > 0.5).int().cpu().data.numpy().flatten())
 
-            test_watch += list(watch_pred.argmax(1).cpu().data.numpy())
-            test_share += list((share_pred.sigmoid() > 0.5).int().cpu().data.numpy().flatten())
     # 保存预测结果
-    test_data['watch_label'] = test_watch
-    test_data['is_share'] = test_share
-    test_data.to_csv('submission.csv', index=None)
-    print('Save submission.csv complete!')
+    if target == 'watch':
+        test_data['watch_label'] = test_watch
+        return test_data
+    elif target == 'share':
+        test_data['is_share'] = test_share
+        test_data.to_csv('submission.csv', index=None)
+        print('Save submission.csv complete!')
 
 
 class MLP(nn.Module):
 
-    def __init__(self, n_users=5910794, n_items=50352, layers=[64, 32], dropout=False):
+    def __init__(self, n_users=5910794, n_items=50352, layers=[64, 32], dropout=False, target='watch'):
         super().__init__()
         self.user_embedding = torch.nn.Embedding(n_users, 32)
         self.video_embedding = torch.nn.Embedding(n_items, 32)
@@ -94,8 +109,10 @@ class MLP(nn.Module):
         self.fc_layers = torch.nn.ModuleList()
         for _, (in_size, out_size) in enumerate(zip(layers[:-1], layers[1:])):
             self.fc_layers.append(torch.nn.Linear(in_size, out_size))
-        self.output_layer1 = torch.nn.Linear(layers[-1], 10)
-        self.output_layer2 = torch.nn.Linear(layers[-1], 1)
+        if target == 'watch':
+            self.output_layer = torch.nn.Linear(layers[-1], 10)
+        elif target == 'share':
+            self.output_layer = torch.nn.Linear(layers[-1], 1)
 
     # 正向传播
     def forward(self, feed_dict):
@@ -110,9 +127,9 @@ class MLP(nn.Module):
             x = self.fc_layers[idx](x)
             x = F.relu(x)
             x = F.dropout(x)
-        logit1 = self.output_layer1(x)
-        logit2 = self.output_layer2(x)
-        return logit1, logit2
+        # logit1 = self.output_layer1(x)
+        logit = self.output_layer(x)
+        return logit
 
     def predict(self, feed_dict):
         for key in feed_dict:

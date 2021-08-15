@@ -53,27 +53,26 @@ def input_and_save_to_hdf5(RAW_DATA_PATH: str) -> str:
     video_features = reduce_mem(video_features)
     behavior_features = reduce_mem(behavior_features)
     # 保存为hdf5文件，方便下次读取
-    hdf5_filename = 'input_datasets.hdf'
-    test_data.to_hdf(hdf5_filename, 'test_data')
-    user_features.to_hdf(hdf5_filename, 'user_features')
-    video_features.to_hdf(hdf5_filename, 'video_features')
-    behavior_features.to_hdf(hdf5_filename, 'behavior_features')
-    return './' + hdf5_filename
+    hdf5_path = '../input_datasets.hdf'
+    test_data.to_hdf(hdf5_path, 'test_data')
+    user_features.to_hdf(hdf5_path, 'user_features')
+    video_features.to_hdf(hdf5_path, 'video_features')
+    behavior_features.to_hdf(hdf5_path, 'behavior_features')
+    return hdf5_path
 
 
 # 从hdf5文件中读取数据集
-def read_hdf5(HDF5_PATH: str):
-    hdf5_filename = HDF5_PATH.split('/')[-1]
-    test_data = pd.read_hdf(hdf5_filename, 'test_data')
-    user_features = pd.read_hdf(hdf5_filename, 'user_features')
-    video_features = pd.read_hdf(hdf5_filename, 'video_features')
-    behavior_features = pd.read_hdf(hdf5_filename, 'behavior_features')
+def read_hdf5(hdf5_path: str):
+    test_data = pd.read_hdf(hdf5_path, 'test_data')
+    user_features = pd.read_hdf(hdf5_path, 'user_features')
+    video_features = pd.read_hdf(hdf5_path, 'video_features')
+    behavior_features = pd.read_hdf(hdf5_path, 'behavior_features')
 
     return test_data, user_features, video_features, behavior_features
 
 
 # 滑动窗口法将输入的每一个窗口切好，并拼接所有窗口
-def sliding_window_cut_data(X_date: List[set], Y_date: List[int], behavior_features: pd.DataFrame) -> pd.DataFrame:
+def sliding_window_cut_data(X_date: List[set], Y_date: List[int], behavior_features: pd.DataFrame, target: str) -> pd.DataFrame:
     date_list = []
     for num in range(20210419, 20210430+1):
         date_list.append(num)
@@ -89,6 +88,7 @@ def sliding_window_cut_data(X_date: List[set], Y_date: List[int], behavior_featu
             X_behavior = X_behavior[X_behavior['pt_d'] != date_list[date-1]]
 
         Y_behavior = Y_behavior.rename(columns={"watch_label": "label_watch", "is_share": "label_share"})
+        print(Y_behavior['label_share'].value_counts())
         # 一条训练样本：uid, vid, label_watch, label_share
         temp_train_behavior = pd.merge(X_behavior,
                                   Y_behavior[['user_id', 'video_id', 'label_watch', 'label_share']],
@@ -96,12 +96,18 @@ def sliding_window_cut_data(X_date: List[set], Y_date: List[int], behavior_featu
 
         temp_train_behavior['label_watch'] = temp_train_behavior['label_watch'].fillna(0)
         temp_train_behavior['label_share'] = temp_train_behavior['label_share'].fillna(0)
-
-        temp_train_behavior = pd.concat([
-            temp_train_behavior[temp_train_behavior['label_watch'] == 0].sample(30000),
-            temp_train_behavior[temp_train_behavior['label_watch'] != 0]
-        ])
-        print(temp_train_behavior['label_watch'].value_counts())
+        if target == 'watch':
+            temp_train_behavior = pd.concat([
+                temp_train_behavior[temp_train_behavior['label_watch'] == 0].sample(50000),
+                temp_train_behavior[temp_train_behavior['label_watch'] != 0]
+            ])
+            print(temp_train_behavior['label_watch'].value_counts())
+        elif target == 'share':
+            temp_train_behavior = pd.concat([
+                temp_train_behavior[temp_train_behavior['label_share'] == 0].sample(1000),
+                temp_train_behavior[temp_train_behavior['label_share'] != 0]
+            ])
+            print(temp_train_behavior['label_share'].value_counts())
         # 一个滑动窗口结束，添加到训练集中
         train_behavior = pd.concat([train_behavior, temp_train_behavior])
 

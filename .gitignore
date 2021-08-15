@@ -133,3 +133,5 @@ dmypy.json
 
 # Submission file
 .csv
+
+*.hdf
