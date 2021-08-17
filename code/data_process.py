@@ -72,7 +72,10 @@ def read_hdf5(hdf5_path: str):
 
 
 # 滑动窗口法将输入的每一个窗口切好，并拼接所有窗口
-def sliding_window_cut_data(X_date: List[set], Y_date: List[int], behavior_features: pd.DataFrame, target: str) -> pd.DataFrame:
+def sliding_window_cut_data(X_date: List[set],
+                            Y_date: List[int],
+                            behavior_features: pd.DataFrame,
+                            target: str) -> pd.DataFrame:
     date_list = []
     for num in range(20210419, 20210430+1):
         date_list.append(num)
@@ -87,8 +90,13 @@ def sliding_window_cut_data(X_date: List[set], Y_date: List[int], behavior_featu
         for date in range(13, X_date[i][1], -1):
             X_behavior = X_behavior[X_behavior['pt_d'] != date_list[date-1]]
 
+        # 清除样本中无用的列
+        X_behavior = X_behavior.drop(columns=['is_watch', 'is_share', 'is_collect', 'is_comment', 'watch_start_time',
+                                              'watch_label', 'pt_d'])
+        Y_behavior = Y_behavior.drop(columns=['is_watch', 'is_collect', 'is_comment', 'watch_start_time', 'pt_d'])
+
         Y_behavior = Y_behavior.rename(columns={"watch_label": "label_watch", "is_share": "label_share"})
-        print(Y_behavior['label_share'].value_counts())
+        print(Y_behavior)
         # 一条训练样本：uid, vid, label_watch, label_share
         temp_train_behavior = pd.merge(X_behavior,
                                   Y_behavior[['user_id', 'video_id', 'label_watch', 'label_share']],
@@ -112,5 +120,3 @@ def sliding_window_cut_data(X_date: List[set], Y_date: List[int], behavior_featu
         train_behavior = pd.concat([train_behavior, temp_train_behavior])
 
     return train_behavior
-
-

@@ -9,33 +9,6 @@ from torch.utils.data import Dataset, DataLoader
 torch.manual_seed(0)
 
 
-# 制作data_loader用
-class MLPDataset(Dataset):
-    def __init__(self, history_behavior, train=True):
-        self.history_behavior = history_behavior
-        self.train = train
-
-    def __getitem__(self, index):
-        user_id = self.history_behavior.iloc[index]['user_id']
-        video_id = self.history_behavior.iloc[index]['video_id']
-
-        if self.train:
-            watch_label = self.history_behavior.iloc[index]['label_watch']
-            share_label = self.history_behavior.iloc[index]['label_share']
-
-            watch_label = int(watch_label)
-            share_label = int(share_label)
-
-            return user_id, video_id, \
-                   torch.from_numpy(np.array(watch_label)), \
-                   torch.from_numpy(np.array([share_label]))
-        else:
-            return user_id, video_id
-
-    def __len__(self):
-        return len(self.history_behavior)
-
-
 # target = 'watch' or 'share'
 def model_train(model, epoch, train_loader, loss_fn, optimizer, target: str):
     for _ in range(epoch):
@@ -98,9 +71,36 @@ def model_predict(model, test_loader, test_data, target: str):
         print('Save submission.csv complete!')
 
 
+# 制作data_loader用
+class MLPDataset(Dataset):
+    def __init__(self, behavior_feature, train=True):
+        self.behavior_feature = behavior_feature
+        self.train = train
+
+    def __getitem__(self, index):
+        user_id = self.behavior_feature.iloc[index]['user_id']
+        video_id = self.behavior_feature.iloc[index]['video_id']
+
+        if self.train:
+            watch_label = self.behavior_feature.iloc[index]['label_watch']
+            share_label = self.behavior_feature.iloc[index]['label_share']
+
+            watch_label = int(watch_label)
+            share_label = int(share_label)
+
+            return user_id, video_id, \
+                   torch.from_numpy(np.array(watch_label)), \
+                   torch.from_numpy(np.array([share_label]))
+        else:
+            return user_id, video_id
+
+    def __len__(self):
+        return len(self.behavior_feature)
+
+
 class MLP(nn.Module):
 
-    def __init__(self, n_users=5910794, n_items=50352, layers=[64, 32], dropout=False, target='watch'):
+    def __init__(self, n_users=5910799, n_items=50356, layers=[64, 32], dropout=False, target='watch'):
         super().__init__()
         self.user_embedding = torch.nn.Embedding(n_users, 32)
         self.video_embedding = torch.nn.Embedding(n_items, 32)
@@ -138,6 +138,48 @@ class MLP(nn.Module):
                     feed_dict[key]).to(dtype=torch.long, device='cpu')
         output_scores = self.forward(feed_dict)
         return output_scores
+
+
+# class MLP(nn.Module):
+#
+#     def __init__(self, n_users=5910799, n_items=50356, layers=[64, 32], dropout=False, target='watch'):
+#         super().__init__()
+#         self.user_embedding = torch.nn.Embedding(n_users, 32)
+#         self.video_embedding = torch.nn.Embedding(n_items, 32)
+#
+#         # list of weight matrices
+#         self.fc_layers = torch.nn.ModuleList()
+#         for _, (in_size, out_size) in enumerate(zip(layers[:-1], layers[1:])):
+#             self.fc_layers.append(torch.nn.Linear(in_size, out_size))
+#         if target == 'watch':
+#             self.output_layer = torch.nn.Linear(layers[-1], 10)
+#         elif target == 'share':
+#             self.output_layer = torch.nn.Linear(layers[-1], 1)
+#
+#     # 正向传播
+#     def forward(self, feed_dict):
+#         users = feed_dict['user_id']
+#         items = feed_dict['video_id']
+#
+#         user_embedding = self.user_embedding(users)
+#         video_embedding = self.video_embedding(items)
+#
+#         x = torch.cat([user_embedding, video_embedding], 1)
+#         for idx, _ in enumerate(range(len(self.fc_layers))):
+#             x = self.fc_layers[idx](x)
+#             x = F.relu(x)
+#             x = F.dropout(x)
+#         # logit1 = self.output_layer1(x)
+#         logit = self.output_layer(x)
+#         return logit
+#
+#     def predict(self, feed_dict):
+#         for key in feed_dict:
+#             if type(feed_dict[key]) != type(None):
+#                 feed_dict[key] = torch.from_numpy(
+#                     feed_dict[key]).to(dtype=torch.long, device='cpu')
+#         output_scores = self.forward(feed_dict)
+#         return output_scores
 
 
 # class NeuMF(nn.Module):
