@@ -21,64 +21,53 @@ if __name__ == '__main__':
     Y_train_day = [14]
 
     train_behavior_watch = sliding_window_cut_data(X_train_day, Y_train_day, behavior_features, target='watch')
-    # 添加特征
-    train_behavior_watch.insert(2, 'video_tags', '')
-    video_tags_all_list = video_features['video_tags'].tolist()
-    video_tags_all_list = [tag for tag in video_tags_all_list if type(tag) is not float]
-    video_tags_all_list = list({tuple(re.split('[,;]', tag)) for tag in video_tags_all_list})
-    video_tags_word2vec_model = make_word2vec_model(video_tags_all_list)
-    for index, row in train_behavior_watch.iterrows():
-        video_features_this_row = video_features[video_features['video_id'] == row['video_id']]
-        if not video_features_this_row.empty and \
-                type(video_features_this_row['video_tags'].iloc[0]) is not float:
-            train_behavior_watch['video_tags'][index] = text_to_vector(text=video_features_this_row['video_tags'].iloc[0],
-                                                                           model=video_tags_word2vec_model)
-        else:
-            train_behavior_watch['video_tags'][index] = np.array([0]*20)  # 长度和word2vec_model输出的向量维度相同
-
-    print(train_behavior_watch)
-
 
     # train_behavior_share = sliding_window_cut_data(X_train_day, Y_train_day, behavior_features, target='share')
+    print('----------1. Sliding window done!----------')
 
-    # # 创建模型，测试是否成功
-    # model_watch = MLP(target='watch')
-    # # model_share = MLP(target='share')
-    # model_watch = model_watch.cuda()
-    # # model_share = model_share.cuda()
-    #
-    # # 制作data_loader和test_loader
-    # train_loader_watch = torch.utils.data.DataLoader(
-    #     dataset=MLPDataset(train_behavior_watch),
-    #     batch_size=1000, shuffle=True, num_workers=5,
+    # 创建模型，测试是否成功
+    model_watch = MLP(target='watch')
+    # model_share = MLP(target='share')
+    model_watch = model_watch.cuda()
+    # model_share = model_share.cuda()
+
+    # 制作data_loader和test_loader
+    process_pool = mp.Pool(mp.cpu_count())
+    train_loader_watch = torch.utils.data.DataLoader(  # 训练时记得标target
+        dataset=MLPDataset(train_behavior_watch, video_features, process_pool=process_pool, target='watch'),
+        batch_size=1000, shuffle=True, num_workers=5,
+    )
+
+    # train_loader_share = torch.utils.data.DataLoader(
+    #     dataset=MLPDataset(train_behavior_share),
+    #     batch_size=100, shuffle=True, num_workers=5,
     # )
-    # # train_loader_share = torch.utils.data.DataLoader(
-    # #     dataset=MLPDataset(train_behavior_share),
-    # #     batch_size=100, shuffle=True, num_workers=5,
-    # # )
-    # test_loader = torch.utils.data.DataLoader(
-    #     dataset=MLPDataset(test_data, train=False),
-    #     batch_size=20, shuffle=False, num_workers=5,
-    # )
-    #
-    # # 设定损失函数，优化器
-    # watch_loss_fn = nn.CrossEntropyLoss(weight=torch.FloatTensor([1, 2, 2, 2, 2, 2, 2, 2, 2, 2]).cuda())
-    # # share_loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([10]).cuda())
-    # optimizer = torch.optim.Adam(model_watch.parameters(), lr=0.005)
-    #
-    # # 训练watch模型
-    # watch_pred, watch_label = model_train(model=model_watch, epoch=30, train_loader=train_loader_watch,
-    #                                       loss_fn=watch_loss_fn, optimizer=optimizer, target='watch')
-    # print(watch_pred.argmax(1) == watch_label)  # 查看第一个batch的预测结果
-    #
-    # # 训练share模型
-    # # share_pred, share_label = model_train(model=model_share, epoch=30, train_loader=train_loader_share,
-    # #                                       loss_fn=share_loss_fn, optimizer=optimizer, target='share')
-    # # print(share_pred.argmax(1) == share_label)  # 查看第一个batch的预测结果
-    #
-    # test_data = model_predict(model=model_watch, test_loader=test_loader, test_data=test_data, target='watch')
-    # # model_predict(model=model_share, test_loader=test_loader, test_data=test_data, target='share')
-    # test_data['is_share'] = 0
-    # test_data.to_csv('submission.csv', index=None)
-    # print('Save submission.csv complete!')
+    test_loader = torch.utils.data.DataLoader(
+        dataset=MLPDataset(test_data, video_features, process_pool=process_pool, train=False, target='test'),
+        batch_size=1000, shuffle=False, num_workers=5,
+    )
+    process_pool.close()
+    print('----------2. Load data done!----------')
+
+    # 设定损失函数，优化器
+    watch_loss_fn = nn.CrossEntropyLoss(weight=torch.FloatTensor([1, 2, 2, 2, 2, 2, 2, 2, 2, 2]).cuda())
+    # share_loss_fn = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([10]).cuda())
+    optimizer = torch.optim.Adam(model_watch.parameters(), lr=0.005)
+
+    # 训练watch模型
+    watch_pred, watch_label = model_train(model=model_watch, epoch=60, train_loader=train_loader_watch,
+                                          loss_fn=watch_loss_fn, optimizer=optimizer, target='watch')
+    print(watch_pred.argmax(1) == watch_label)  # 查看第一个batch的预测结果
+    print('----------3. Train model done!----------')
+    # 训练share模型
+    # share_pred, share_label = model_train(model=model_share, epoch=30, train_loader=train_loader_share,
+    #                                       loss_fn=share_loss_fn, optimizer=optimizer, target='share')
+    # print(share_pred.argmax(1) == share_label)  # 查看第一个batch的预测结果
+
+    test_data = model_predict(model=model_watch, test_loader=test_loader, test_data=test_data, target='watch')
+    # model_predict(model=model_share, test_loader=test_loader, test_data=test_data, target='share')
+    test_data['is_share'] = 0
+    test_data.to_csv('submission.csv', index=None)
+    print('Save submission.csv complete!')
+    print('----------4. Predict done!----------')
 
