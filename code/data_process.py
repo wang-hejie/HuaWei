@@ -72,7 +72,7 @@ def read_hdf5(hdf5_path: str):
 
 
 # 滑动窗口法将输入的每一个窗口切好，并拼接所有窗口
-def sliding_window_cut_data(X_date: List[set],
+def sliding_window_cut_data(X_date: List[tuple[int, int]],
                             Y_date: List[int],
                             behavior_features: pd.DataFrame,
                             target: str) -> pd.DataFrame:
@@ -95,27 +95,25 @@ def sliding_window_cut_data(X_date: List[set],
                                               'watch_label', 'pt_d'])
         Y_behavior = Y_behavior.drop(columns=['is_watch', 'is_collect', 'is_comment', 'watch_start_time', 'pt_d'])
 
-        Y_behavior = Y_behavior.rename(columns={"watch_label": "label_watch", "is_share": "label_share"})
+        Y_behavior = Y_behavior.rename(columns={"is_share": "share_label"})
         print(Y_behavior)
         # 一条训练样本：uid, vid, label_watch, label_share
         temp_train_behavior = pd.merge(X_behavior,
-                                  Y_behavior[['user_id', 'video_id', 'label_watch', 'label_share']],
+                                  Y_behavior[['user_id', 'video_id', 'watch_label', 'share_label']],
                                   on=['user_id', 'video_id'], how='left')
 
-        temp_train_behavior['label_watch'] = temp_train_behavior['label_watch'].fillna(0)
-        temp_train_behavior['label_share'] = temp_train_behavior['label_share'].fillna(0)
+        temp_train_behavior['watch_label'] = temp_train_behavior['watch_label'].fillna(0)
+        temp_train_behavior['share_label'] = temp_train_behavior['share_label'].fillna(0)
         if target == 'watch':
             temp_train_behavior = pd.concat([
-                temp_train_behavior[temp_train_behavior['label_watch'] == 0].sample(50000),
-                temp_train_behavior[temp_train_behavior['label_watch'] != 0]
+                temp_train_behavior[temp_train_behavior['watch_label'] == 0].sample(50000),
+                temp_train_behavior[temp_train_behavior['watch_label'] != 0]
             ])
-            print(temp_train_behavior['label_watch'].value_counts())
         elif target == 'share':
             temp_train_behavior = pd.concat([
-                temp_train_behavior[temp_train_behavior['label_share'] == 0].sample(1000),
-                temp_train_behavior[temp_train_behavior['label_share'] != 0]
+                temp_train_behavior[temp_train_behavior['share_label'] == 0].sample(10000),
+                temp_train_behavior[temp_train_behavior['share_label'] != 0]
             ])
-            print(temp_train_behavior['label_share'].value_counts())
         # 一个滑动窗口结束，添加到训练集中
         train_behavior = pd.concat([train_behavior, temp_train_behavior])
 
